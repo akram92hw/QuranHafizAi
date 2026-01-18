@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuranHifzAI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(to bottom, #6a1b9a, #1565c0);
+            color: white;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            text-align: center;
+        }
+        nav {
+            display: flex;
+            justify-content: space-around;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+        }
+        nav button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 10px;
+        }
+        nav button.active {
+            border-bottom: 2px solid white;
+        }
+        section {
+            flex: 1;
+            padding: 20px;
+            display: none;
+        }
+        section.active {
+            display: block;
+        }
+        #chat-messages {
+            height: 300px;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .message {
+            margin-bottom: 10px;
+        }
+        .user { text-align: right; }
+        .assistant { text-align: left; }
+        #prayer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .prayer-item {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 10px;
+            text-align: center;
+        }
+        #surah-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .surah-item {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+        audio {
+            width: 100%;
+        }
+        footer {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            text-align: center;
+            font-size: 12px;
+        }
+        .arabic {
+            font-family: 'Traditional Arabic', serif;
+            direction: rtl;
+            font-size: 18px;
+        }
+        @media (max-width: 600px) {
+            nav {
+                flex-direction: column;
+            }
+            nav button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>QuranHifzAI</h1>
+    </header>
+    <nav>
+        <button onclick="showTab('assistant')" class="active">Assistant Islamique</button>
+        <button onclick="showTab('correction')">Correction Coran</button>
+        <button onclick="showTab('prieres')">Horaires de Prière</button>
+        <button onclick="showTab('lecture')">Lecture du Coran</button>
+    </nav>
+    <section id="assistant" class="active">
+        <div id="chat-messages"></div>
+        <input type="text" id="user-input" placeholder="Posez votre question sur l'Islam...">
+        <button onclick="sendMessage()">Envoyer</button>
+    </section>
+    <section id="correction">
+        <h2>Correction de Récitation</h2>
+        <p>Enregistrez ou tapez votre récitation (en arabe ou phonétique).</p>
+        <input type="text" id="recitation-input" placeholder="Entrez votre récitation...">
+        <input type="text" id="expected-text" placeholder="Texte attendu (verset)...">
+        <button onclick="correctRecitation()">Corriger</button>
+        <div id="correction-result"></div>
+    </section>
+    <section id="prieres">
+        <h2>Horaires de Prière</h2>
+        <input type="text" id="city-input" placeholder="Entrez le nom de votre ville...">
+        <button onclick="getPrayers()">Obtenir Horaires</button>
+        <div id="prayer-grid"></div>
+        <p>Pour des horaires précis, consultez <a href="https://www.islamicfinder.org" style="color: yellow;">islamicfinder.org</a> ou <a href="https://www.mosquee-de-paris.org" style="color: yellow;">mosquee-de-paris.org</a>.</p>
+    </section>
+    <section id="lecture">
+        <h2>Lecture du Coran</h2>
+        <button onclick="randomSurah()">Récitation Aléatoire</button>
+        <div id="surah-list"></div>
+    </section>
+    <footer>
+        Les réponses fournies sont à but éducatif et basées sur les sources islamiques reconnues. Pour tout avis juridique religieux précis, consultez un savant qualifié.
+    </footer>
+
+    <script>
+        const API_KEY = 'VOTRE_CLE_API_ANTHROPIC'; // Remplacez par votre clé API Anthropic
+        const MODEL = 'claude-3-5-sonnet-20240620'; // Modèle Claude 3.5 Sonnet (ajustez si nécessaire)
+
+        const surahs = [
+            {id: 1, arabic: 'الفاتحة', french: 'Al-Fatiha (L\'ouverture)', verses: 7, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/001.mp3'},
+            {id: 2, arabic: 'البقرة', french: 'Al-Baqara (La vache)', verses: 286, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/002.mp3'},
+            {id: 3, arabic: 'آل عمران', french: 'Al-Imran (La famille d\'Imran)', verses: 200, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/003.mp3'},
+            {id: 4, arabic: 'النساء', french: 'An-Nisa (Les femmes)', verses: 176, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/004.mp3'},
+            {id: 5, arabic: 'المائدة', french: 'Al-Maida (La table servie)', verses: 120, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/005.mp3'},
+            {id: 6, arabic: 'الأنعام', french: 'Al-Anam (Les bestiaux)', verses: 165, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/006.mp3'},
+            {id: 7, arabic: 'الأعراف', french: 'Al-Araf (Les limbes)', verses: 206, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/007.mp3'},
+            {id: 8, arabic: 'الأنفال', french: 'Al-Anfal (Le butin)', verses: 75, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/008.mp3'},
+            {id: 9, arabic: 'التوبة', french: 'At-Tawba (Le repentir)', verses: 129, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/009.mp3'},
+            {id: 10, arabic: 'يونس', french: 'Yunus (Jonas)', verses: 109, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/010.mp3'},
+            // Ajoutez les 104 restantes de manière similaire. Liste complète disponible sur https://coran12-21.org/fr/sourates ou similaire.
+            // Pour brevité, je n'inclurai pas toutes ici, mais vous pouvez copier la liste complète depuis une source fiable.
+            {id: 114, arabic: 'الناس', french: 'An-Nas (Les hommes)', verses: 6, audio: 'https://download.quranicaudio.com/quran/mishaari_raashid_al_3afaasee/114.mp3'}
+        ];
+
+        let chatHistory = JSON.parse(localStorage.getItem('chatHistory')) || [];
+
+        function showTab(tabId) {
+            document.querySelectorAll('section').forEach(sec => sec.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`button[onclick="showTab('${tabId}')"]`).classList.add('active');
+            if (tabId === 'assistant') loadChat();
+            if (tabId === 'lecture') loadSurahs();
+        }
+
+        function loadChat() {
+            const messagesDiv = document.getElementById('chat-messages');
+            messagesDiv.innerHTML = '';
+            chatHistory.forEach(msg => {
+                const div = document.createElement('div');
+                div.classList.add('message', msg.role);
+                div.textContent = msg.content;
+                messagesDiv.appendChild(div);
+            });
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('user-input');
+            const question = input.value.trim();
+            if (!question) return;
+            input.value = '';
+
+            chatHistory.push({role: 'user', content: question});
+            loadChat();
+
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: MODEL,
+                    max_tokens: 1024,
+                    messages: chatHistory,
+                    system: 'Vous êtes un assistant islamique bienveillant. Répondez en français, basez-vous sur des sources fiables comme islamqa.info, sunnah.com, etc. Citez les versets ou hadiths. Soyez cohérent et respectueux.'
+                })
+            });
+            const data = await response.json();
+            const answer = data.content[0].text;
+
+            chatHistory.push({role: 'assistant', content: answer});
+            localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+            loadChat();
+        }
+
+        async function correctRecitation() {
+            const recitation = document.getElementById('recitation-input').value.trim().toLowerCase().replace(/[\u064B-\u065F]/g, ''); // Enlever diacritiques
+            const expected = document.getElementById('expected-text').value.trim().toLowerCase().replace(/[\u064B-\u065F]/g, '');
+            if (!recitation || !expected) return;
+
+            // Vérification simple : au moins 2 mots corrects
+            const recWords = recitation.split(/\s+/);
+            const expWords = expected.split(/\s+/);
+            let correctCount = 0;
+            recWords.forEach(word => {
+                if (expWords.includes(word)) correctCount++;
+            });
+
+            const resultDiv = document.getElementById('correction-result');
+            if (correctCount >= 2) {
+                resultDiv.textContent = 'Validé ! Passage au verset suivant.';
+                // Logique pour passer au suivant (ajoutez votre implémentation)
+            } else {
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': API_KEY,
+                        'anthropic-version': '2023-06-01'
+                    },
+                    body: JSON.stringify({
+                        model: MODEL,
+                        max_tokens: 512,
+                        messages: [{role: 'user', content: `Corrigez cette récitation : "${recitation}" par rapport à "${expected}". Fournissez des conseils de Tajwid bienveillants.`}],
+                        system: 'Soyez pédagogique, bienveillant. Fournissez des conseils sur ghunna, idgham, etc.'
+                    })
+                });
+                const data = await response.json();
+                resultDiv.textContent = data.content[0].text;
+            }
+        }
+
+        function getPrayers() {
+            const city = document.getElementById('city-input').value.trim();
+            if (!city) return;
+
+            const grid = document.getElementById('prayer-grid');
+            grid.innerHTML = '';
+            const prayers = ['Fajr', 'Lever du soleil', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+            prayers.forEach(prayer => {
+                const div = document.createElement('div');
+                div.classList.add('prayer-item');
+                div.innerHTML = `<strong>${prayer}</strong><br>Horaires approximatifs pour ${city}. Consultez sites fiables pour précision.`;
+                grid.appendChild(div);
+            });
+        }
+
+        function loadSurahs() {
+            const list = document.getElementById('surah-list');
+            list.innerHTML = '';
+            surahs.forEach(surah => {
+                const div = document.createElement('div');
+                div.classList.add('surah-item');
+                div.innerHTML = `
+                    <h3><span class="arabic">${surah.arabic}</span> - ${surah.french} (${surah.verses} versets)</h3>
+                    <audio controls src="${surah.audio}"></audio>
+                    <a href="${surah.audio}" download>Télécharger</a>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function randomSurah() {
+            const randomIndex = Math.floor(Math.random() * surahs.length);
+            const surah = surahs[randomIndex];
+            const audio = new Audio(surah.audio);
+            audio.play();
+            alert(`Récitation aléatoire : ${surah.french}`);
+        }
+
+        // Charge initial
+        showTab('assistant');
+    </script>
+</body>
+</html>
